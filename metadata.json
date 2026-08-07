@@ -1,0 +1,6 @@
+{
+  "name": "Smart Campus Election",
+  "description": "Smart Campus Election System for IAMS Campus with student voting, candidate profiles, position management, real-time results, EVM sound effects, and admin dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
