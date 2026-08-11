@@ -3,6 +3,7 @@ import { useElection } from '../context/ElectionContext';
 import { Student, Candidate, Position, Announcement, IAMS_DEPARTMENTS } from '../types/election';
 import { BulkStudentUpload } from './BulkStudentUpload';
 import { NominateCandidateModal } from './NominateCandidateModal';
+import { BulkCandidateUploadModal } from './BulkCandidateUploadModal';
 import { ElectionSlipModal } from './ElectionSlipModal';
 import { ElectionSlipsSection } from './ElectionSlipsSection';
 import {
@@ -26,6 +27,9 @@ import {
   Upload,
   QrCode,
   Ticket,
+  FileSpreadsheet,
+  Power,
+  PowerOff,
 } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
@@ -65,6 +69,7 @@ export const AdminDashboard: React.FC = () => {
   // Modals visibility
   const [showAddStudentModal, setShowAddStudentModal] = useState(false);
   const [showAddCandidateModal, setShowAddCandidateModal] = useState(false);
+  const [showBulkCandidateModal, setShowBulkCandidateModal] = useState(false);
   const [showAddPositionModal, setShowAddPositionModal] = useState(false);
   const [showAddAnnModal, setShowAddAnnModal] = useState(false);
   const [selectedStudentForSlip, setSelectedStudentForSlip] = useState<Student | null>(null);
@@ -554,13 +559,23 @@ export const AdminDashboard: React.FC = () => {
               </select>
             </div>
 
-            <button
-              onClick={() => setShowAddCandidateModal(true)}
-              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 self-start sm:self-center"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Nominate Candidate</span>
-            </button>
+            <div className="flex items-center gap-2 self-start sm:self-center">
+              <button
+                onClick={() => setShowBulkCandidateModal(true)}
+                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>Import Candidates (Excel/CSV)</span>
+              </button>
+
+              <button
+                onClick={() => setShowAddCandidateModal(true)}
+                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Nominate Candidate</span>
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -574,12 +589,23 @@ export const AdminDashboard: React.FC = () => {
                     <img
                       src={cand.photo}
                       alt={cand.name}
-                      className="w-12 h-12 rounded-xl object-cover ring-2 ring-slate-200"
+                      className="w-12 h-12 rounded-xl object-cover ring-2 ring-slate-200 dark:ring-slate-700"
                     />
                     <div>
-                      <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
-                        {cand.name}
-                      </h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
+                          {cand.name}
+                        </h3>
+                        {cand.isActive === false ? (
+                          <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                            Deactivated
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                            Active
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs font-semibold text-blue-600 dark:text-blue-400">
                         {cand.positionName}
                       </p>
@@ -587,12 +613,33 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => deleteCandidate(cand.id)}
-                    className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() =>
+                        updateCandidate(cand.id, { isActive: cand.isActive === false ? true : false })
+                      }
+                      title={cand.isActive === false ? 'Activate Candidate' : 'Deactivate Candidate'}
+                      className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
+                        cand.isActive === false
+                          ? 'text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40'
+                          : 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+                      }`}
+                    >
+                      {cand.isActive === false ? (
+                        <PowerOff className="w-4 h-4" />
+                      ) : (
+                        <Power className="w-4 h-4" />
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => deleteCandidate(cand.id)}
+                      title="Permanently Delete Candidate"
+                      className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 <p className="text-xs text-slate-600 dark:text-slate-300 italic line-clamp-2">
@@ -600,7 +647,13 @@ export const AdminDashboard: React.FC = () => {
                 </p>
 
                 <div className="pt-2 border-t border-slate-200/50 dark:border-slate-700/50 flex items-center justify-between text-[11px] font-bold text-slate-500">
-                  <span>Votes Received: <strong className="text-blue-600">{cand.votesCount || 0}</strong></span>
+                  <span>
+                    Votes Received:{' '}
+                    <strong className="text-blue-600">{cand.votesCount || 0}</strong>
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    ID: {cand.candidateId || cand.id}
+                  </span>
                 </div>
               </div>
             ))}
@@ -786,6 +839,12 @@ export const AdminDashboard: React.FC = () => {
       <NominateCandidateModal
         isOpen={showAddCandidateModal}
         onClose={() => setShowAddCandidateModal(false)}
+      />
+
+      {/* Bulk Candidate Upload Modal */}
+      <BulkCandidateUploadModal
+        isOpen={showBulkCandidateModal}
+        onClose={() => setShowBulkCandidateModal(false)}
       />
 
       {/* Add Position Modal */}

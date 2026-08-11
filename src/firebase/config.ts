@@ -505,11 +505,88 @@ export const listenToCandidatesFromFirestore = (
 
 export const saveCandidateToFirestore = async (candidate: any): Promise<boolean> => {
   try {
-    await setDoc(doc(db, 'candidates', candidate.id), candidate, { merge: true });
+    const docId = (candidate.candidateId || candidate.id || `cand-${Date.now()}`).trim();
+    const docRef = doc(db, 'candidates', docId);
+
+    const docData: Record<string, any> = {
+      id: docId,
+      candidateId: docId,
+      name: candidate.name,
+      photo: candidate.photo || candidate.photoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+      photoUrl: candidate.photoUrl || candidate.photo || '',
+      positionId: candidate.positionId || 'pos-1',
+      positionName: candidate.positionName || candidate.position || 'Council Member',
+      position: candidate.position || candidate.positionName || 'Council Member',
+      department: candidate.department || 'Business Management',
+      manifesto: candidate.manifesto || '',
+      campaignMessage: candidate.campaignMessage || `Vote for ${candidate.name}!`,
+      achievements: Array.isArray(candidate.achievements) ? candidate.achievements : [],
+      votesCount: candidate.votesCount !== undefined ? candidate.votesCount : 0,
+      isActive: candidate.isActive !== undefined ? candidate.isActive : true,
+      updatedAt: serverTimestamp(),
+    };
+
+    if (candidate.createdAt) {
+      docData.createdAt = candidate.createdAt;
+    }
+
+    await setDoc(docRef, docData, { merge: true });
     return true;
   } catch (err) {
     console.error('Error saving candidate to Firestore:', err);
     return false;
+  }
+};
+
+export const saveCandidatesToFirestoreBatch = async (
+  candidatesList: any[]
+): Promise<{ saved: number; failed: number }> => {
+  if (!isFirebaseConfigured() || !db) return { saved: 0, failed: 0 };
+
+  try {
+    const batch = writeBatch(db);
+    let savedCount = 0;
+
+    candidatesList.forEach((cand) => {
+      const docId = (
+        cand.candidateId ||
+        cand.id ||
+        `cand-${cand.name ? cand.name.toLowerCase().replace(/[^a-z0-9]/g, '') : Date.now()}`
+      ).trim();
+
+      const docRef = doc(db, 'candidates', docId);
+
+      const docData: Record<string, any> = {
+        id: docId,
+        candidateId: docId,
+        name: cand.name,
+        photo: cand.photo || cand.photoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+        photoUrl: cand.photoUrl || cand.photo || '',
+        positionId: cand.positionId || 'pos-1',
+        positionName: cand.positionName || cand.position || 'Council Member',
+        position: cand.position || cand.positionName || 'Council Member',
+        department: cand.department || 'Business Management',
+        manifesto: cand.manifesto || '',
+        campaignMessage: cand.campaignMessage || `Vote for ${cand.name}!`,
+        achievements: Array.isArray(cand.achievements) ? cand.achievements : [],
+        votesCount: cand.votesCount !== undefined ? cand.votesCount : 0,
+        isActive: cand.isActive !== undefined ? cand.isActive : true,
+        updatedAt: serverTimestamp(),
+      };
+
+      if (cand.createdAt) {
+        docData.createdAt = cand.createdAt;
+      }
+
+      batch.set(docRef, docData, { merge: true });
+      savedCount += 1;
+    });
+
+    await batch.commit();
+    return { saved: savedCount, failed: 0 };
+  } catch (err) {
+    console.error('Error saving candidates batch to Firestore:', err);
+    return { saved: 0, failed: candidatesList.length };
   }
 };
 

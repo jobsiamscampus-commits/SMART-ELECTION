@@ -26,6 +26,7 @@ import {
   saveStudentsToFirestoreBatch,
   listenToCandidatesFromFirestore,
   saveCandidateToFirestore,
+  saveCandidatesToFirestoreBatch,
   deleteCandidateFromFirestore,
   listenToPositionsFromFirestore,
   savePositionToFirestore,
@@ -264,8 +265,13 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     });
 
     const unsubCandidates = listenToCandidatesFromFirestore((firestoreCandidates) => {
-      if (firestoreCandidates && firestoreCandidates.length > 0) {
-        setCandidates(firestoreCandidates);
+      if (firestoreCandidates) {
+        if (firestoreCandidates.length === 0) {
+          // If clean Firestore DB, seed default candidates permanently to Firestore
+          saveCandidatesToFirestoreBatch(DEFAULT_CANDIDATES);
+        } else {
+          setCandidates(firestoreCandidates);
+        }
       }
     });
 
@@ -626,12 +632,21 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Candidate Management Operations
   const addCandidate = (candData: Omit<Candidate, 'id' | 'votesCount'>) => {
     playSound('success', soundEnabled);
+    const candId = (candData.candidateId || `cand-${Date.now()}`).trim();
     const newCand: Candidate = {
       ...candData,
-      id: `cand-${Date.now()}`,
+      id: candId,
+      candidateId: candId,
       votesCount: 0,
+      isActive: true,
     };
-    setCandidates((prev) => [...prev, newCand]);
+    setCandidates((prev) => {
+      const exists = prev.some((c) => c.id === candId || (c.candidateId && c.candidateId === candId));
+      if (exists) {
+        return prev.map((c) => (c.id === candId || c.candidateId === candId ? { ...c, ...newCand } : c));
+      }
+      return [...prev, newCand];
+    });
     saveCandidateToFirestore(newCand);
   };
 
