@@ -3,9 +3,9 @@ import * as XLSX from 'xlsx';
 import { useElection } from '../context/ElectionContext';
 import { Student, IAMS_DEPARTMENTS, IAMSDepartment } from '../types/election';
 import {
-  checkExistingStudentIdsInFirestore,
-  saveStudentsToFirestoreBatch,
-} from '../firebase/config';
+  checkExistingStudentIdsInSupabase,
+  saveStudentsToSupabaseBatch,
+} from '../supabase/config';
 import {
   Upload,
   FileSpreadsheet,
@@ -106,8 +106,8 @@ export const BulkStudentUpload: React.FC<BulkStudentUploadProps> = ({ onBack }) 
     setFile(uploadedFile);
     setImportSummary(null);
 
-    // Fetch existing student IDs from Cloud Firestore
-    const existingFirestoreIds = await checkExistingStudentIdsInFirestore();
+    // Fetch existing student IDs from Supabase
+    const existingSupabaseIds = await checkExistingStudentIdsInSupabase();
 
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -165,9 +165,9 @@ export const BulkStudentUpload: React.FC<BulkStudentUploadProps> = ({ onBack }) 
           } else if (!rawPass) {
             status = 'invalid';
             errorMessage = 'Password is required.';
-          } else if (existingFirestoreIds.has(normalizedId) || existingLocalStudentIds.has(normalizedId)) {
+          } else if (existingSupabaseIds.has(normalizedId) || existingLocalStudentIds.has(normalizedId)) {
             status = 'duplicate';
-            errorMessage = `Student ID ${rawId} already exists in Firestore (will be skipped).`;
+            errorMessage = `Student ID ${rawId} already exists in database (will be updated or preserved).`;
           } else if (seenInFileIds.has(normalizedId)) {
             status = 'duplicate';
             errorMessage = `Duplicate Student ID ${rawId} found in file (will be skipped).`;
@@ -224,10 +224,9 @@ export const BulkStudentUpload: React.FC<BulkStudentUploadProps> = ({ onBack }) 
     }
   };
 
-  // Execute Import directly to Cloud Firestore
+  // Execute Import directly to Supabase
   const handleStartImport = async () => {
-    const validRows = parsedRows.filter((r) => r.status === 'valid');
-    const duplicateRows = parsedRows.filter((r) => r.status === 'duplicate');
+    const validRows = parsedRows.filter((r) => r.status === 'valid' || r.status === 'duplicate');
 
     if (validRows.length === 0) {
       alert('No valid student records found to import.');
@@ -238,7 +237,7 @@ export const BulkStudentUpload: React.FC<BulkStudentUploadProps> = ({ onBack }) 
     setImportProgress(15);
 
     const studentsToWrite = validRows.map((r) => ({
-      rowNumber: r.rowNum,
+      id: r.studentId,
       studentId: r.studentId,
       name: r.name,
       department: r.department,
@@ -248,22 +247,22 @@ export const BulkStudentUpload: React.FC<BulkStudentUploadProps> = ({ onBack }) 
       semester: 2,
     }));
 
-    // Step 5: Write valid students to Cloud Firestore collection "students/{studentId}"
+    // Write valid students to Supabase database
     setImportProgress(45);
-    const result = await saveStudentsToFirestoreBatch(studentsToWrite);
+    const result = await saveStudentsToSupabaseBatch(studentsToWrite);
     setImportProgress(85);
 
-    // Step 7: WAIT & VERIFY records exist in Firestore by re-fetching
+    // WAIT & VERIFY records exist in Supabase
     await reloadStudentsFromFirestore();
     setImportProgress(100);
 
     setIsImporting(false);
 
     setImportSummary({
-      importedCount: result.savedCount,
-      duplicateCount: duplicateRows.length,
-      failedCount: result.failedCount,
-      failedRows: result.failedRows,
+      importedCount: result.inserted + result.updated,
+      duplicateCount: 0,
+      failedCount: result.failed,
+      failedRows: result.errors.map((e) => ({ studentId: e.studentId, reason: e.reason })),
     });
   };
 

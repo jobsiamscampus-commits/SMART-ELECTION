@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Student } from '../types/election';
 import {
-  generateAllStudentSlipsBatch,
-  fetchStudentsFromFirestore,
-} from '../firebase/config';
+  bulkGenerateSlipsInSupabase,
+  fetchStudentsFromSupabase,
+} from '../supabase/config';
 import { ElectionSlipModal } from './ElectionSlipModal';
 import { PrintableElectionSlips } from './PrintableElectionSlips';
 import {
@@ -48,7 +48,7 @@ export const ElectionSlipsSection: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
-    const data = await fetchStudentsFromFirestore();
+    const data = await fetchStudentsFromSupabase();
     setStudents(data);
     setLoading(false);
   };
@@ -58,23 +58,20 @@ export const ElectionSlipsSection: React.FC = () => {
   }, []);
 
   // Handle Bulk Slip Generation
-  const handleGenerateAllSlips = async (forceRegenerate: boolean = false) => {
+  const handleGenerateAllSlips = async () => {
     setGenerating(true);
     setGenCompletedMsg(null);
-    setProgress({ current: 0, total: 0 });
 
     try {
-      const res = await generateAllStudentSlipsBatch((current, total) => {
-        setProgress({ current, total });
-      }, forceRegenerate);
-
-      setStudents(res.students);
+      const res = await bulkGenerateSlipsInSupabase();
+      const updatedList = await fetchStudentsFromSupabase();
+      setStudents(updatedList);
       setGenCompletedMsg(
-        `Success! Generated Election Slips for ${res.totalCount} total students (${res.updatedCount} new tokens generated).`
+        `Success! Generated Election Slips for ${res.totalStudents} students in Supabase (${res.generatedCount} new tokens/passcodes).`
       );
     } catch (err) {
       console.error('Error generating election slips:', err);
-      setGenCompletedMsg('Failed to generate election slips. Please check your network connection.');
+      setGenCompletedMsg('Failed to generate election slips. Please check your Supabase setup.');
     } finally {
       setGenerating(false);
     }
@@ -207,7 +204,7 @@ export const ElectionSlipsSection: React.FC = () => {
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-2.5">
             <button
-              onClick={() => handleGenerateAllSlips(false)}
+              onClick={() => handleGenerateAllSlips()}
               disabled={generating || students.length === 0}
               className="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 text-white font-black text-xs rounded-2xl shadow-lg flex items-center gap-2 transition-all cursor-pointer active:scale-95 disabled:cursor-not-allowed"
             >

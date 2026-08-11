@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Student } from '../types/election';
-import { fetchStudentByIdFromFirestore } from '../firebase/config';
+import { fetchStudentByIdFromSupabase } from '../supabase/config';
 import { useElection } from '../context/ElectionContext';
 import {
   Vote,
@@ -52,7 +52,7 @@ export const ElectionSlipView: React.FC<ElectionSlipViewProps> = ({
         return;
       }
 
-      const found = await fetchStudentByIdFromFirestore(studentIdParam);
+      const found = await fetchStudentByIdFromSupabase(studentIdParam);
 
       if (isMounted) {
         if (found) {

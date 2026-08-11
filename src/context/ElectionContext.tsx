@@ -18,27 +18,26 @@ import {
 } from '../utils/sampleData';
 import { playSound } from '../utils/sound';
 import {
-  fetchStudentsFromFirestore,
-  listenToStudentsFromFirestore,
-  saveSingleStudentToFirestore,
-  deleteStudentFromFirestore,
-  markStudentVotedInFirestore,
-  saveStudentsToFirestoreBatch,
-  listenToCandidatesFromFirestore,
-  saveCandidateToFirestore,
-  saveCandidatesToFirestoreBatch,
-  deleteCandidateFromFirestore,
-  listenToPositionsFromFirestore,
-  savePositionToFirestore,
-  deletePositionFromFirestore,
-  listenToAnnouncementsFromFirestore,
-  saveAnnouncementToFirestore,
-  deleteAnnouncementFromFirestore,
-  listenToSettingsFromFirestore,
-  saveSettingsToFirestore,
-  listenToVotesFromFirestore,
-  cleanupMockDataFromFirestore,
-} from '../firebase/config';
+  fetchStudentsFromSupabase,
+  listenToStudentsFromSupabase,
+  saveSingleStudentToSupabase,
+  deleteStudentFromSupabase,
+  markStudentVotedInSupabase,
+  saveStudentsToSupabaseBatch,
+  listenToCandidatesFromSupabase,
+  saveCandidateToSupabase,
+  saveCandidatesToSupabaseBatch,
+  deleteCandidateFromSupabase,
+  listenToPositionsFromSupabase,
+  savePositionToSupabase,
+  deletePositionFromSupabase,
+  listenToAnnouncementsFromSupabase,
+  saveAnnouncementToSupabase,
+  deleteAnnouncementFromSupabase,
+  listenToSettingsFromSupabase,
+  saveSettingsToSupabase,
+  listenToVotesFromSupabase,
+} from '../supabase/config';
 
 interface ElectionContextType {
   // Session & UI Navigation
@@ -276,44 +275,41 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [settings]);
 
-  // Real-time Cloud Firestore Listeners for single source of truth across all devices
+  // Real-time Supabase Listeners for single source of truth across all devices
   useEffect(() => {
-    // Perform automated production cleanup for mock/demo students and candidates from Firestore
-    cleanupMockDataFromFirestore();
-
-    const unsubStudents = listenToStudentsFromFirestore((firestoreStudents) => {
-      if (firestoreStudents && firestoreStudents.length >= 0) {
-        setStudents(firestoreStudents);
+    const unsubStudents = listenToStudentsFromSupabase((supabaseStudents) => {
+      if (supabaseStudents && supabaseStudents.length >= 0) {
+        setStudents(supabaseStudents);
       }
     });
 
-    const unsubCandidates = listenToCandidatesFromFirestore((firestoreCandidates) => {
-      if (firestoreCandidates) {
-        setCandidates(firestoreCandidates);
+    const unsubCandidates = listenToCandidatesFromSupabase((supabaseCandidates) => {
+      if (supabaseCandidates) {
+        setCandidates(supabaseCandidates);
       }
     });
 
-    const unsubPositions = listenToPositionsFromFirestore((firestorePositions) => {
-      if (firestorePositions && firestorePositions.length > 0) {
-        setPositions(firestorePositions);
+    const unsubPositions = listenToPositionsFromSupabase((supabasePositions) => {
+      if (supabasePositions && supabasePositions.length > 0) {
+        setPositions(supabasePositions);
       }
     });
 
-    const unsubAnnouncements = listenToAnnouncementsFromFirestore((firestoreAnnouncements) => {
-      if (firestoreAnnouncements && firestoreAnnouncements.length >= 0) {
-        setAnnouncements(firestoreAnnouncements);
+    const unsubAnnouncements = listenToAnnouncementsFromSupabase((supabaseAnnouncements) => {
+      if (supabaseAnnouncements && supabaseAnnouncements.length >= 0) {
+        setAnnouncements(supabaseAnnouncements);
       }
     });
 
-    const unsubSettings = listenToSettingsFromFirestore((firestoreSettings) => {
-      if (firestoreSettings) {
-        setSettings(firestoreSettings);
+    const unsubSettings = listenToSettingsFromSupabase((supabaseSettings) => {
+      if (supabaseSettings) {
+        setSettings(supabaseSettings);
       }
     });
 
-    const unsubVotes = listenToVotesFromFirestore((firestoreVotes) => {
-      if (firestoreVotes && firestoreVotes.length >= 0) {
-        setVotes(firestoreVotes);
+    const unsubVotes = listenToVotesFromSupabase((supabaseVotes) => {
+      if (supabaseVotes && supabaseVotes.length >= 0) {
+        setVotes(supabaseVotes);
       }
     });
 
@@ -328,7 +324,7 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
 
   const reloadStudentsFromFirestore = async (): Promise<Student[]> => {
-    const fresh = await fetchStudentsFromFirestore();
+    const fresh = await fetchStudentsFromSupabase();
     if (fresh && fresh.length >= 0) {
       setStudents(fresh);
     }
@@ -349,7 +345,7 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const updateSettings = (newSettings: Partial<ElectionSettings>) => {
     const updated = { ...settings, ...newSettings };
     setSettings(updated);
-    saveSettingsToFirestore(updated);
+    saveSettingsToSupabase(updated);
   };
 
   // Auth Operations
@@ -512,12 +508,13 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       });
     });
 
-    // Mark student voted in Cloud Firestore via atomic transaction
-    const res = await markStudentVotedInFirestore(studentObj.id, newVoteRecords);
+    // Mark student voted in Supabase via database
+    const selectedCandidateIds = Object.values(selectedCandidates);
+    const res = await markStudentVotedInSupabase(studentObj.id, selectedCandidateIds);
 
     if (!res.success) {
       playSound('error', soundEnabled);
-      return { success: false, message: res.message || 'Failed to submit vote to Firestore.' };
+      return { success: false, message: res.message || 'Failed to submit vote to Supabase.' };
     }
 
     // Local State Optimistic Update
@@ -529,7 +526,7 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (votesReceived > 0) {
           const newCount = (cand.votesCount || 0) + votesReceived;
           const updatedCand = { ...cand, votesCount: newCount };
-          saveCandidateToFirestore(updatedCand);
+          saveCandidateToSupabase(updatedCand);
           return updatedCand;
         }
         return cand;
@@ -548,7 +545,7 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     // Play EVM Confirmation Sound Beep!
     playSound('vote_success', soundEnabled);
 
-    return { success: true, message: '🎉 Your vote has been successfully recorded in Firestore!' };
+    return { success: true, message: '🎉 Your vote has been successfully recorded in Supabase!' };
   };
 
   // Admin Election State Operations
@@ -593,7 +590,7 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       hasVoted: false,
     };
     setStudents((prev) => [newStudent, ...prev]);
-    saveSingleStudentToFirestore(newStudent);
+    saveSingleStudentToSupabase(newStudent);
   };
 
   const bulkAddStudents = (newStudentsList: Student[]) => {
@@ -603,8 +600,9 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const filteredNew = newStudentsList.filter((s) => !existingIds.has(s.id.toUpperCase()));
       return [...filteredNew, ...prev];
     });
-    saveStudentsToFirestoreBatch(
+    saveStudentsToSupabaseBatch(
       newStudentsList.map((s) => ({
+        id: s.id || s.studentId,
         studentId: s.studentId || s.id,
         name: s.name,
         department: s.department,
@@ -622,7 +620,7 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const next = prev.map((s) => (s.id === studentId ? { ...s, ...updated } : s));
       const target = next.find((s) => s.id === studentId);
       if (target) {
-        saveSingleStudentToFirestore(target);
+        saveSingleStudentToSupabase(target);
       }
       return next;
     });
@@ -631,7 +629,7 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const deleteStudent = (studentId: string) => {
     playSound('button_click', soundEnabled);
     setStudents((prev) => prev.filter((s) => s.id !== studentId));
-    deleteStudentFromFirestore(studentId);
+    deleteStudentFromSupabase(studentId);
   };
 
   const resetStudentVoteStatus = (studentId: string) => {
@@ -640,7 +638,7 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const next = prev.map((s) => (s.id === studentId ? { ...s, hasVoted: false, votedAt: undefined } : s));
       const target = next.find((s) => s.id === studentId);
       if (target) {
-        saveSingleStudentToFirestore(target);
+        saveSingleStudentToSupabase(target);
       }
       return next;
     });
@@ -694,7 +692,7 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return [...prev, newCand];
     });
 
-    await saveCandidateToFirestore(newCand);
+    await saveCandidateToSupabase(newCand);
   };
 
   const updateCandidate = (candidateId: string, updated: Partial<Candidate>) => {
@@ -703,7 +701,7 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const next = prev.map((c) => (c.id === candidateId ? { ...c, ...updated } : c));
       const target = next.find((c) => c.id === candidateId);
       if (target) {
-        saveCandidateToFirestore(target);
+        saveCandidateToSupabase(target);
       }
       return next;
     });
@@ -712,7 +710,7 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const deleteCandidate = (candidateId: string) => {
     playSound('button_click', soundEnabled);
     setCandidates((prev) => prev.filter((c) => c.id !== candidateId));
-    deleteCandidateFromFirestore(candidateId);
+    deleteCandidateFromSupabase(candidateId);
   };
 
   // Positions Operations
@@ -723,13 +721,13 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       id: `pos-${Date.now()}`,
     };
     setPositions((prev) => [...prev, newPos]);
-    savePositionToFirestore(newPos);
+    savePositionToSupabase(newPos);
   };
 
   const deletePosition = (positionId: string) => {
     playSound('button_click', soundEnabled);
     setPositions((prev) => prev.filter((p) => p.id !== positionId));
-    deletePositionFromFirestore(positionId);
+    deletePositionFromSupabase(positionId);
   };
 
   // Announcements Operations
@@ -740,13 +738,13 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       id: `ann-${Date.now()}`,
     };
     setAnnouncements((prev) => [newAnn, ...prev]);
-    saveAnnouncementToFirestore(newAnn);
+    saveAnnouncementToSupabase(newAnn);
   };
 
   const deleteAnnouncement = (announcementId: string) => {
     playSound('button_click', soundEnabled);
     setAnnouncements((prev) => prev.filter((a) => a.id !== announcementId));
-    deleteAnnouncementFromFirestore(announcementId);
+    deleteAnnouncementFromSupabase(announcementId);
   };
 
   // Helpers

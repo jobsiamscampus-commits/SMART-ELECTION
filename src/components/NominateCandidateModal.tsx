@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useElection } from '../context/ElectionContext';
-import { Position, IAMS_DEPARTMENTS, IAMSDepartment, Candidate } from '../types/election';
+import { Candidate, IAMS_DEPARTMENTS, Position } from '../types/election';
+import { uploadCandidatePhotoToSupabase } from '../supabase/config';
 import {
   Upload,
   Camera,
@@ -167,7 +168,12 @@ export const NominateCandidateModal: React.FC<NominateCandidateModalProps> = ({
         : (userEnteredId || defaultCandId);
 
       setUploadProgress(60);
-      const firebaseStoragePath = `candidate_photos/${candidateId}.jpg`;
+      let finalPhotoUrl = photoPreviewUrl;
+      if (photoFile) {
+        finalPhotoUrl = await uploadCandidatePhotoToSupabase(photoFile, candidateId);
+      } else if (photoPreviewUrl.startsWith('data:')) {
+        finalPhotoUrl = await uploadCandidatePhotoToSupabase(photoPreviewUrl, candidateId);
+      }
       setUploadProgress(100);
 
       const achievementsList = achievementsText
@@ -178,8 +184,8 @@ export const NominateCandidateModal: React.FC<NominateCandidateModalProps> = ({
       const newCandidateObj: Omit<Candidate, 'id' | 'votesCount'> & { candidateId: string } = {
         candidateId,
         name: candidateName.trim(),
-        photo: photoPreviewUrl,
-        photoUrl: photoPreviewUrl,
+        photo: finalPhotoUrl,
+        photoUrl: finalPhotoUrl,
         positionId: selectedPositionId,
         positionName: posTitle,
         position: posTitle,

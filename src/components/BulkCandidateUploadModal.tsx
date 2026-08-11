@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { useElection } from '../context/ElectionContext';
 import { Candidate, IAMS_DEPARTMENTS, IAMSDepartment } from '../types/election';
-import { saveCandidatesToFirestoreBatch } from '../firebase/config';
+import { saveCandidatesToSupabaseBatch } from '../supabase/config';
 import {
   Upload,
   FileSpreadsheet,
@@ -275,12 +275,12 @@ export const BulkCandidateUploadModal: React.FC<BulkCandidateUploadModalProps> =
       }));
 
       setImportProgress(60);
-      const res = await saveCandidatesToFirestoreBatch(candidatesToSave);
+      const res = await saveCandidatesToSupabaseBatch(candidatesToSave);
       setImportProgress(100);
 
       setIsImporting(false);
       setSummaryMessage(
-        `✔ Successfully processed ${res.saved} candidate records in Cloud Firestore. Existing candidates remained safe and intact!`
+        `✔ Successfully processed candidate records in Supabase database. Existing candidates remained safe and intact!`
       );
 
       setTimeout(() => {
