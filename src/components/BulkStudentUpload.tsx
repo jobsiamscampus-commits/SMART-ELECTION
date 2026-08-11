@@ -67,7 +67,7 @@ export const BulkStudentUpload: React.FC<BulkStudentUploadProps> = ({ onBack }) 
   // Generate and Download 70 Sample Students Excel File
   const handleDownloadSampleExcel = () => {
     const firstNames = [
-      'Aarav', 'Ananya', 'Rohan', 'Amina', 'Aditya', 'Sneha', 'Vikram', 'Diya', 'Rahul', 'Kavya',
+      'Arjun', 'Ananya', 'Rohan', 'Amina', 'Aditya', 'Sneha', 'Vikram', 'Diya', 'Rahul', 'Kavya',
       'Arjun', 'Isha', 'Karan', 'Meera', 'Varun', 'Riya', 'Siddharth', 'Tanvi', 'Yash', 'Pooja',
       'Dev', 'Nisha', 'Aman', 'Sanya', 'Kabir', 'Tara', 'Ayush', 'Zara', 'Pranav', 'Simran'
     ];

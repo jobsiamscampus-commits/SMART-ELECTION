@@ -13,6 +13,8 @@ export interface Student {
   department: string;
   semester: number | string;
   password?: string;
+  passcode?: string;
+  slipToken?: string;
   photo: string;
   hasVoted: boolean;
   votedAt?: string;

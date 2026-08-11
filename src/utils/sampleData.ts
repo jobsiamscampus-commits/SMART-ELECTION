@@ -16,69 +16,9 @@ const LAST_NAMES = [
   'Khan', 'Ahmed', 'Syed', 'Ali', 'Siddiqui', 'Hassan', 'Shah', 'Qureshi', 'Mirza', 'Husain'
 ];
 
-// Generate 70 Students distributed across Business Management, Digital Marketing, and Plus Two Commerce
+// Generate Students - Returns empty array. Only uploaded students from Cloud Firestore are used.
 export const generateSampleStudents = (): Student[] => {
-  const students: Student[] = [];
-
-  // First 5 fixed students for instant testing
-  const fixedStudents = [
-    { id: 'IAMS-2026-001', studentId: 'IAMS001', name: 'Aarav Sharma', dept: 'Business Management', sem: 4 },
-    { id: 'IAMS-2026-002', studentId: 'IAMS002', name: 'Ananya Verma', dept: 'Digital Marketing', sem: 4 },
-    { id: 'IAMS-2026-003', studentId: 'IAMS003', name: 'Rohan Patel', dept: 'Plus Two Commerce', sem: 2 },
-    { id: 'IAMS-2026-004', studentId: 'IAMS004', name: 'Amina Gupta', dept: 'Digital Marketing', sem: 2 },
-    { id: 'IAMS-2026-005', studentId: 'IAMS005', name: 'Aditya Kumar', dept: 'Business Management', sem: 4 },
-  ];
-
-  fixedStudents.forEach((st) => {
-    students.push({
-      id: st.id,
-      studentId: st.studentId,
-      name: st.name,
-      department: st.dept,
-      semester: st.sem,
-      password: 'student123',
-      photo: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80`,
-      hasVoted: false,
-    });
-  });
-
-  // Generate remaining 65 students (total 70)
-  for (let i = 6; i <= 70; i++) {
-    const padded = i.toString().padStart(3, '0');
-    const id = `IAMS-2026-${padded}`;
-    const studentId = `IAMS${padded}`;
-    const fname = FIRST_NAMES[i % FIRST_NAMES.length];
-    const lname = LAST_NAMES[i % LAST_NAMES.length];
-    const dept = DEPARTMENTS[i % DEPARTMENTS.length];
-    const sem = (i % 6) + 1;
-
-    const photoIds = [
-      '1539571696357-5a69c17a67c6',
-      '1507003211169-0a1dd7228f2d',
-      '1494790108377-be9c29b29330',
-      '1500648767791-00dcc994a43e',
-      '1438761681033-6461ffad8d80',
-      '1472099645785-5658abf4ff4e',
-      '1517841905240-472988babdf9',
-      '1524504388940-b1c1722653e1'
-    ];
-    const photoId = photoIds[i % photoIds.length];
-    const hasVoted = i <= 28;
-
-    students.push({
-      id,
-      studentId,
-      name: `${fname} ${lname}`,
-      department: dept,
-      semester: sem,
-      password: 'student123',
-      photo: `https://images.unsplash.com/photo-${photoId}?auto=format&fit=crop&w=250&q=80`,
-      hasVoted,
-      votedAt: hasVoted ? new Date(Date.now() - (i * 1800000)).toISOString() : undefined,
-    });
-  }
-
-  return students;
+  return [];
 };
 
 // Default Positions (Chairman, Treasurer, Media Head, Program Coordinator, General Captain)
@@ -115,12 +55,12 @@ export const DEFAULT_POSITIONS: Position[] = [
   },
 ];
 
-// Exactly 10 Candidates distributed across the 5 positions and departments (Business Management, Digital Marketing, Plus Two Commerce)
+// Candidates distributed across the 5 positions and departments
 export const DEFAULT_CANDIDATES: Candidate[] = [
   // Chairman Candidates
   {
     id: 'cand-1',
-    name: 'Aarav Sharma',
+    name: 'Rohan Menon',
     photo: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
     positionId: 'pos-1',
     positionName: 'Chairman',

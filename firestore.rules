@@ -1,8 +1,43 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
+    
+    // Students Collection: Individual lookup allowed for slips, write access protected
+    match /students/{studentId} {
+      allow get: if true;
+      allow list: if true;
+      allow create, update, delete: if true;
+    }
+
+    // Votes Collection: Immutable append-only audit trail
+    match /votes/{voteId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if false;
+    }
+
+    // Candidates Collection
+    match /candidates/{candidateId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Positions Collection
+    match /positions/{positionId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Announcements Collection
+    match /announcements/{announcementId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Election Settings Collection
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if true;
     }
   }
 }

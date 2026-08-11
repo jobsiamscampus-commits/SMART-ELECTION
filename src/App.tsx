@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ElectionProvider, useElection } from './context/ElectionContext';
 import { SplashScreen } from './components/SplashScreen';
 import { Navbar } from './components/Navbar';
@@ -10,11 +10,35 @@ import { ResultsView } from './components/ResultsView';
 import { StudentProfileView } from './components/StudentProfileView';
 import { AdminDashboard } from './components/AdminDashboard';
 import { NoticeBoardView } from './components/NoticeBoardView';
+import { ElectionSlipView } from './components/ElectionSlipView';
 import { Vote, ShieldCheck, Heart } from 'lucide-react';
 
 const MainAppContent: React.FC = () => {
-  const { splashVisible, activeTab, currentUser } = useElection();
+  const { splashVisible, activeTab, currentUser, students } = useElection();
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+
+  // Check URL parameters for Election Slip shared link (e.g. ?slip=1001 or ?studentId=1001 or ?token=1001)
+  const [slipParam, setSlipParam] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const urlParams = new URLSearchParams(window.location.search);
+    const slip = urlParams.get('slip') || urlParams.get('studentId') || urlParams.get('token');
+    if (slip) return slip.trim();
+
+    const hash = window.location.hash;
+    if (hash && hash.includes('slip=')) {
+      const parts = hash.split('slip=');
+      if (parts[1]) return parts[1].split('&')[0].trim();
+    }
+    return null;
+  });
+
+  const handleClearSlipParam = () => {
+    setSlipParam(null);
+    if (typeof window !== 'undefined' && window.history) {
+      const newUrl = window.location.origin + window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-200">
@@ -32,13 +56,22 @@ const MainAppContent: React.FC = () => {
 
       {/* Main View Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-20 md:pb-12">
-        {activeTab === 'home' && <HomeView />}
-        {activeTab === 'candidates' && <CandidatesView />}
-        {activeTab === 'vote' && <VotingView />}
-        {activeTab === 'results' && <ResultsView />}
-        {activeTab === 'profile' && <StudentProfileView />}
-        {activeTab === 'admin' && <AdminDashboard />}
-        {activeTab === 'noticeboard' && <NoticeBoardView />}
+        {slipParam ? (
+          <ElectionSlipView
+            studentIdParam={slipParam}
+            onClearSlipParam={handleClearSlipParam}
+          />
+        ) : (
+          <>
+            {activeTab === 'home' && <HomeView />}
+            {activeTab === 'candidates' && <CandidatesView />}
+            {activeTab === 'vote' && <VotingView />}
+            {activeTab === 'results' && <ResultsView />}
+            {activeTab === 'profile' && <StudentProfileView />}
+            {activeTab === 'admin' && <AdminDashboard />}
+            {activeTab === 'noticeboard' && <NoticeBoardView />}
+          </>
+        )}
       </main>
 
       {/* Footer */}
@@ -53,10 +86,10 @@ const MainAppContent: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-1 text-[11px]">
-            <span>Powered by Cloud Firestore & React</span>
+            <span>Powered by Cloud Firestore</span>
             <span>•</span>
             <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-              <ShieldCheck className="w-3.5 h-3.5" /> 70 Verified Voters
+              <ShieldCheck className="w-3.5 h-3.5" /> {students.length} Registered Voters
             </span>
           </div>
         </div>

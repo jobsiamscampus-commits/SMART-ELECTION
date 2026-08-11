@@ -3,6 +3,8 @@ import { useElection } from '../context/ElectionContext';
 import { Student, Candidate, Position, Announcement, IAMS_DEPARTMENTS } from '../types/election';
 import { BulkStudentUpload } from './BulkStudentUpload';
 import { NominateCandidateModal } from './NominateCandidateModal';
+import { ElectionSlipModal } from './ElectionSlipModal';
+import { ElectionSlipsSection } from './ElectionSlipsSection';
 import {
   ShieldCheck,
   Users,
@@ -22,6 +24,8 @@ import {
   FileText,
   Filter,
   Upload,
+  QrCode,
+  Ticket,
 } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
@@ -49,7 +53,7 @@ export const AdminDashboard: React.FC = () => {
     deleteAnnouncement,
   } = useElection();
 
-  const [adminTab, setAdminTab] = useState<'students' | 'candidates' | 'positions' | 'announcements' | 'bulk_upload'>('students');
+  const [adminTab, setAdminTab] = useState<'students' | 'election_slips' | 'candidates' | 'positions' | 'announcements' | 'bulk_upload'>('students');
 
   // Search & Filter States
   const [studentSearch, setStudentSearch] = useState('');
@@ -63,6 +67,7 @@ export const AdminDashboard: React.FC = () => {
   const [showAddCandidateModal, setShowAddCandidateModal] = useState(false);
   const [showAddPositionModal, setShowAddPositionModal] = useState(false);
   const [showAddAnnModal, setShowAddAnnModal] = useState(false);
+  const [selectedStudentForSlip, setSelectedStudentForSlip] = useState<Student | null>(null);
 
   // New Student Form State
   const [newStudent, setNewStudent] = useState({
@@ -102,10 +107,10 @@ export const AdminDashboard: React.FC = () => {
     category: 'Notice' as 'Rules' | 'Schedule' | 'Notice' | 'Meeting',
   });
 
-  const totalStudents = students.length || 70;
+  const totalStudents = students.length;
   const votedCount = students.filter((s) => s.hasVoted).length;
-  const pendingCount = totalStudents - votedCount;
-  const turnoutPercent = Math.round((votedCount / totalStudents) * 100);
+  const pendingCount = Math.max(0, totalStudents - votedCount);
+  const turnoutPercent = totalStudents > 0 ? Math.round((votedCount / totalStudents) * 100) : 0;
 
   // Filtered Students list
   const filteredStudents = students.filter((s) => {
@@ -325,6 +330,18 @@ export const AdminDashboard: React.FC = () => {
         </button>
 
         <button
+          onClick={() => setAdminTab('election_slips')}
+          className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+            adminTab === 'election_slips'
+              ? 'bg-indigo-600 text-white shadow-md'
+              : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 border border-indigo-200 dark:border-indigo-800'
+          }`}
+        >
+          <Ticket className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
+          <span>🎟️ Election Slips</span>
+        </button>
+
+        <button
           onClick={() => setAdminTab('candidates')}
           className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
             adminTab === 'candidates'
@@ -364,6 +381,11 @@ export const AdminDashboard: React.FC = () => {
       {/* Tab 0: Bulk Student Upload Dedicated View */}
       {adminTab === 'bulk_upload' && (
         <BulkStudentUpload onBack={() => setAdminTab('students')} />
+      )}
+
+      {/* Tab: Election Slips Section */}
+      {adminTab === 'election_slips' && (
+        <ElectionSlipsSection />
       )}
 
       {/* Tab 1: Manage Students */}
@@ -476,6 +498,14 @@ export const AdminDashboard: React.FC = () => {
                       )}
                     </td>
                     <td className="p-3 text-right space-x-2">
+                      <button
+                        onClick={() => setSelectedStudentForSlip(st)}
+                        title="Generate & Share Election Slip"
+                        className="px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-800 dark:bg-blue-950 dark:text-blue-300 rounded-lg text-[10px] font-bold cursor-pointer inline-flex items-center gap-1"
+                      >
+                        <Ticket className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                        <span>Slip</span>
+                      </button>
                       {st.hasVoted && (
                         <button
                           onClick={() => resetStudentVoteStatus(st.id)}
@@ -868,6 +898,14 @@ export const AdminDashboard: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Selected Student Election Slip Modal */}
+      {selectedStudentForSlip && (
+        <ElectionSlipModal
+          student={selectedStudentForSlip}
+          onClose={() => setSelectedStudentForSlip(null)}
+        />
       )}
     </div>
   );

@@ -323,8 +323,8 @@ export const VotingView: React.FC = () => {
   const handleConfirmVote = async () => {
     setIsSubmitting(true);
 
-    setTimeout(() => {
-      const res = castBallot(selections);
+    try {
+      const res = await castBallot(selections);
       setIsSubmitting(false);
       setShowConfirmModal(false);
 
@@ -335,8 +335,14 @@ export const VotingView: React.FC = () => {
           spread: 80,
           origin: { y: 0.6 },
         });
+      } else {
+        alert(res.message || 'Failed to submit vote.');
       }
-    }, 600);
+    } catch (err: any) {
+      setIsSubmitting(false);
+      setShowConfirmModal(false);
+      alert(err?.message || 'Error submitting vote.');
+    }
   };
 
   // ----------------------------------------------------

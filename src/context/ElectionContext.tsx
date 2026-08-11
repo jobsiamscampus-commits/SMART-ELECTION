@@ -24,6 +24,18 @@ import {
   deleteStudentFromFirestore,
   markStudentVotedInFirestore,
   saveStudentsToFirestoreBatch,
+  listenToCandidatesFromFirestore,
+  saveCandidateToFirestore,
+  deleteCandidateFromFirestore,
+  listenToPositionsFromFirestore,
+  savePositionToFirestore,
+  deletePositionFromFirestore,
+  listenToAnnouncementsFromFirestore,
+  saveAnnouncementToFirestore,
+  deleteAnnouncementFromFirestore,
+  listenToSettingsFromFirestore,
+  saveSettingsToFirestore,
+  listenToVotesFromFirestore,
 } from '../firebase/config';
 
 interface ElectionContextType {
@@ -57,7 +69,7 @@ interface ElectionContextType {
   logout: () => void;
 
   // Student Voting Action
-  castBallot: (selectedCandidates: Record<string, string>) => { success: boolean; message: string };
+  castBallot: (selectedCandidates: Record<string, string>) => Promise<{ success: boolean; message: string }>;
 
   // Admin Actions
   openVoting: () => void;
@@ -129,10 +141,19 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
   });
 
-  // Students Dataset (70 default)
+  // Students Dataset (Loaded permanently from Cloud Firestore)
   const [students, setStudents] = useState<Student[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.STUDENTS);
-    return saved ? JSON.parse(saved) : generateSampleStudents();
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        // Clean out any legacy mock students
+        return parsed.filter((s: any) => s.name !== 'Aarav Sharma' && s.id !== 'IAMS-2026-001');
+      } catch {
+        return [];
+      }
+    }
+    return [];
   });
 
   // Positions Dataset (Automatically filters out Vice Chairman and Secretary)
@@ -194,41 +215,17 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const saved = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.name === 'Aarav Sharma') return null;
+        return parsed;
       } catch {
         return null;
       }
     }
-    // Default to first student (Aarav Sharma - IAMS-2026-001) for instant testability
-    const sampleSt = generateSampleStudents();
-    return sampleSt[0];
+    return null;
   });
 
-  // Persist State to LocalStorage
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(students));
-  }, [students]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.CANDIDATES, JSON.stringify(candidates));
-  }, [candidates]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.POSITIONS, JSON.stringify(positions));
-  }, [positions]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.VOTES, JSON.stringify(votes));
-  }, [votes]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.ANNOUNCEMENTS, JSON.stringify(announcements));
-  }, [announcements]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
-  }, [settings]);
-
+  // Preference & Session Persistence (UI state only)
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.SOUND_ENABLED, JSON.stringify(soundEnabled));
   }, [soundEnabled]);
@@ -258,22 +255,57 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [currentUser]);
 
-  // Real-time Cloud Firestore Listener for permanent Student roster sync
+  // Real-time Cloud Firestore Listeners for single source of truth across all devices
   useEffect(() => {
-    const unsubscribe = listenToStudentsFromFirestore((firestoreStudents) => {
-      if (firestoreStudents && firestoreStudents.length > 0) {
+    const unsubStudents = listenToStudentsFromFirestore((firestoreStudents) => {
+      if (firestoreStudents && firestoreStudents.length >= 0) {
         setStudents(firestoreStudents);
       }
     });
 
+    const unsubCandidates = listenToCandidatesFromFirestore((firestoreCandidates) => {
+      if (firestoreCandidates && firestoreCandidates.length > 0) {
+        setCandidates(firestoreCandidates);
+      }
+    });
+
+    const unsubPositions = listenToPositionsFromFirestore((firestorePositions) => {
+      if (firestorePositions && firestorePositions.length > 0) {
+        setPositions(firestorePositions);
+      }
+    });
+
+    const unsubAnnouncements = listenToAnnouncementsFromFirestore((firestoreAnnouncements) => {
+      if (firestoreAnnouncements && firestoreAnnouncements.length >= 0) {
+        setAnnouncements(firestoreAnnouncements);
+      }
+    });
+
+    const unsubSettings = listenToSettingsFromFirestore((firestoreSettings) => {
+      if (firestoreSettings) {
+        setSettings(firestoreSettings);
+      }
+    });
+
+    const unsubVotes = listenToVotesFromFirestore((firestoreVotes) => {
+      if (firestoreVotes && firestoreVotes.length >= 0) {
+        setVotes(firestoreVotes);
+      }
+    });
+
     return () => {
-      unsubscribe();
+      unsubStudents();
+      unsubCandidates();
+      unsubPositions();
+      unsubAnnouncements();
+      unsubSettings();
+      unsubVotes();
     };
   }, []);
 
   const reloadStudentsFromFirestore = async (): Promise<Student[]> => {
     const fresh = await fetchStudentsFromFirestore();
-    if (fresh && fresh.length > 0) {
+    if (fresh && fresh.length >= 0) {
       setStudents(fresh);
     }
     return fresh;
@@ -291,7 +323,9 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const updateSettings = (newSettings: Partial<ElectionSettings>) => {
-    setSettings((prev) => ({ ...prev, ...newSettings }));
+    const updated = { ...settings, ...newSettings };
+    setSettings(updated);
+    saveSettingsToFirestore(updated);
   };
 
   // Auth Operations
@@ -421,8 +455,8 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setActiveTab('home');
   };
 
-  // Student Cast Ballot Function (Supports per-position choices)
-  const castBallot = (selectedCandidates: Record<string, string>) => {
+  // Student Cast Ballot Function (Supports per-position choices, atomic transaction via Firestore)
+  const castBallot = async (selectedCandidates: Record<string, string>) => {
     if (userRole !== 'student' || !currentUser) {
       playSound('error', soundEnabled);
       return { success: false, message: 'Only logged-in students can cast votes.' };
@@ -454,24 +488,30 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       });
     });
 
-    // 1. Update Votes state
+    // Mark student voted in Cloud Firestore via atomic transaction
+    const res = await markStudentVotedInFirestore(studentObj.id, newVoteRecords);
+
+    if (!res.success) {
+      playSound('error', soundEnabled);
+      return { success: false, message: res.message || 'Failed to submit vote to Firestore.' };
+    }
+
+    // Local State Optimistic Update
     setVotes((prev) => [...prev, ...newVoteRecords]);
 
-    // 2. Increment vote counts on Candidates
     setCandidates((prev) =>
       prev.map((cand) => {
         const votesReceived = newVoteRecords.filter((v) => v.candidateId === cand.id).length;
         if (votesReceived > 0) {
-          return {
-            ...cand,
-            votesCount: (cand.votesCount || 0) + votesReceived,
-          };
+          const newCount = (cand.votesCount || 0) + votesReceived;
+          const updatedCand = { ...cand, votesCount: newCount };
+          saveCandidateToFirestore(updatedCand);
+          return updatedCand;
         }
         return cand;
       })
     );
 
-    // 3. Mark Student as voted
     const updatedStudent: Student = {
       ...studentObj,
       hasVoted: true,
@@ -480,9 +520,6 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     setStudents((prev) => prev.map((st) => (st.id === studentObj.id ? updatedStudent : st)));
     setCurrentUser(updatedStudent);
-
-    // Save ballot and mark student voted in Cloud Firestore
-    markStudentVotedInFirestore(studentObj.id, newVoteRecords);
 
     // Play EVM Confirmation Sound Beep!
     playSound('vote_success', soundEnabled);
@@ -493,22 +530,22 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Admin Election State Operations
   const openVoting = () => {
     playSound('button_click', soundEnabled);
-    setSettings((prev) => ({ ...prev, votingOpen: true }));
+    updateSettings({ votingOpen: true });
   };
 
   const closeVoting = () => {
     playSound('button_click', soundEnabled);
-    setSettings((prev) => ({ ...prev, votingOpen: false }));
+    updateSettings({ votingOpen: false });
   };
 
   const publishResults = () => {
     playSound('success', soundEnabled);
-    setSettings((prev) => ({ ...prev, resultPublished: true }));
+    updateSettings({ resultPublished: true });
   };
 
   const unpublishResults = () => {
     playSound('button_click', soundEnabled);
-    setSettings((prev) => ({ ...prev, resultPublished: false }));
+    updateSettings({ resultPublished: false });
   };
 
   const resetElection = () => {
@@ -517,7 +554,7 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setVotes([]);
     setStudents((prev) => prev.map((s) => ({ ...s, hasVoted: false, votedAt: undefined })));
     setCandidates((prev) => prev.map((c) => ({ ...c, votesCount: 0 })));
-    setSettings((prev) => ({ ...prev, votingOpen: true, resultPublished: false }));
+    updateSettings({ votingOpen: true, resultPublished: false });
 
     if (currentUser && 'hasVoted' in currentUser) {
       setCurrentUser({ ...(currentUser as Student), hasVoted: false, votedAt: undefined });
@@ -538,12 +575,10 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const bulkAddStudents = (newStudentsList: Student[]) => {
     playSound('success', soundEnabled);
     setStudents((prev) => {
-      // Filter out any IDs already existing just in case
       const existingIds = new Set(prev.map((s) => s.id.toUpperCase()));
       const filteredNew = newStudentsList.filter((s) => !existingIds.has(s.id.toUpperCase()));
       return [...filteredNew, ...prev];
     });
-    // Write all to Firestore in batch
     saveStudentsToFirestoreBatch(
       newStudentsList.map((s) => ({
         studentId: s.studentId || s.id,
@@ -552,7 +587,7 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         password: s.password,
         photo: s.photo,
         hasVoted: s.hasVoted,
-        semester: s.semester,
+        semester: typeof s.semester === 'number' ? s.semester : (parseInt(String(s.semester), 10) || 2),
       }))
     );
   };
@@ -585,7 +620,6 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
       return next;
     });
-    // Remove student's votes
     setVotes((prev) => prev.filter((v) => v.studentId !== studentId));
   };
 
@@ -598,16 +632,25 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       votesCount: 0,
     };
     setCandidates((prev) => [...prev, newCand]);
+    saveCandidateToFirestore(newCand);
   };
 
   const updateCandidate = (candidateId: string, updated: Partial<Candidate>) => {
     playSound('button_click', soundEnabled);
-    setCandidates((prev) => prev.map((c) => (c.id === candidateId ? { ...c, ...updated } : c)));
+    setCandidates((prev) => {
+      const next = prev.map((c) => (c.id === candidateId ? { ...c, ...updated } : c));
+      const target = next.find((c) => c.id === candidateId);
+      if (target) {
+        saveCandidateToFirestore(target);
+      }
+      return next;
+    });
   };
 
   const deleteCandidate = (candidateId: string) => {
     playSound('button_click', soundEnabled);
     setCandidates((prev) => prev.filter((c) => c.id !== candidateId));
+    deleteCandidateFromFirestore(candidateId);
   };
 
   // Positions Operations
@@ -618,11 +661,13 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       id: `pos-${Date.now()}`,
     };
     setPositions((prev) => [...prev, newPos]);
+    savePositionToFirestore(newPos);
   };
 
   const deletePosition = (positionId: string) => {
     playSound('button_click', soundEnabled);
     setPositions((prev) => prev.filter((p) => p.id !== positionId));
+    deletePositionFromFirestore(positionId);
   };
 
   // Announcements Operations
@@ -633,11 +678,13 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       id: `ann-${Date.now()}`,
     };
     setAnnouncements((prev) => [newAnn, ...prev]);
+    saveAnnouncementToFirestore(newAnn);
   };
 
   const deleteAnnouncement = (announcementId: string) => {
     playSound('button_click', soundEnabled);
     setAnnouncements((prev) => prev.filter((a) => a.id !== announcementId));
+    deleteAnnouncementFromFirestore(announcementId);
   };
 
   // Helpers
