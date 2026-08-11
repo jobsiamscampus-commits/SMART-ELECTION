@@ -53,6 +53,7 @@ export const BulkStudentUpload: React.FC<BulkStudentUploadProps> = ({ onBack }) 
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0); // 0 to 100
   const [currentImportingIndex, setCurrentImportingIndex] = useState(0);
+  const [allowOverwrite, setAllowOverwrite] = useState(false);
 
   // Summary State after import
   const [importSummary, setImportSummary] = useState<{
@@ -226,17 +227,28 @@ export const BulkStudentUpload: React.FC<BulkStudentUploadProps> = ({ onBack }) 
 
   // Execute Import directly to Supabase
   const handleStartImport = async () => {
-    const validRows = parsedRows.filter((r) => r.status === 'valid' || r.status === 'duplicate');
+    const rowsToImport = allowOverwrite
+      ? parsedRows.filter((r) => r.status === 'valid' || r.status === 'duplicate')
+      : parsedRows.filter((r) => r.status === 'valid');
 
-    if (validRows.length === 0) {
-      alert('No valid student records found to import.');
+    const skippedDuplicatesCount = allowOverwrite
+      ? 0
+      : parsedRows.filter((r) => r.status === 'duplicate').length;
+
+    if (rowsToImport.length === 0) {
+      if (skippedDuplicatesCount > 0) {
+        alert('All records in the file are duplicates. Check "Overwrite existing students" if you wish to update them.');
+      } else {
+        alert('No valid student records found to import.');
+      }
       return;
     }
 
     setIsImporting(true);
     setImportProgress(15);
+    setCurrentImportingIndex(0);
 
-    const studentsToWrite = validRows.map((r) => ({
+    const studentsToWrite = rowsToImport.map((r) => ({
       id: r.studentId,
       studentId: r.studentId,
       name: r.name,
@@ -249,8 +261,10 @@ export const BulkStudentUpload: React.FC<BulkStudentUploadProps> = ({ onBack }) 
 
     // Write valid students to Supabase database
     setImportProgress(45);
+    setCurrentImportingIndex(Math.floor(studentsToWrite.length / 2));
     const result = await saveStudentsToSupabaseBatch(studentsToWrite);
     setImportProgress(85);
+    setCurrentImportingIndex(studentsToWrite.length);
 
     // WAIT & VERIFY records exist in Supabase
     await reloadStudentsFromFirestore();
@@ -259,8 +273,8 @@ export const BulkStudentUpload: React.FC<BulkStudentUploadProps> = ({ onBack }) 
     setIsImporting(false);
 
     setImportSummary({
-      importedCount: result.inserted + result.updated,
-      duplicateCount: 0,
+      importedCount: allowOverwrite ? result.inserted + result.updated : result.inserted,
+      duplicateCount: skippedDuplicatesCount,
       failedCount: result.failed,
       failedRows: result.errors.map((e) => ({ studentId: e.studentId, reason: e.reason })),
     });
@@ -302,7 +316,7 @@ export const BulkStudentUpload: React.FC<BulkStudentUploadProps> = ({ onBack }) 
             <span>📥 Bulk Student Upload</span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-2xl">
-            Import student accounts via Excel (.xlsx) or CSV (.csv). Firebase Authentication credentials (`studentid@iamscampus.local`) and Firestore student documents will be provisions automatically.
+            Import student accounts via Excel (.xlsx) or CSV (.csv). Student records and election passcodes are saved directly to Supabase (`public.students`).
           </p>
         </div>
 
@@ -350,7 +364,7 @@ export const BulkStudentUpload: React.FC<BulkStudentUploadProps> = ({ onBack }) 
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold flex items-center gap-1.5 mt-0.5">
                 <Database className="w-3.5 h-3.5 text-blue-500" />
-                <span>✓ {importSummary.importedCount} Students Saved Permanently in Firebase Firestore</span>
+                <span>✓ {importSummary.importedCount} Students Saved Permanently in Supabase Database</span>
               </p>
             </div>
           </div>
@@ -365,7 +379,7 @@ export const BulkStudentUpload: React.FC<BulkStudentUploadProps> = ({ onBack }) 
                 ✔ {importSummary.importedCount}
               </div>
               <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">
-                Stored permanently in Cloud Firestore
+                Stored permanently in Supabase Database
               </p>
             </div>
 
@@ -391,7 +405,7 @@ export const BulkStudentUpload: React.FC<BulkStudentUploadProps> = ({ onBack }) 
                 ❌ {importSummary.failedCount}
               </div>
               <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1">
-                {importSummary.failedCount === 0 ? 'No errors encountered' : 'Could not write to Firestore'}
+                {importSummary.failedCount === 0 ? 'No errors encountered' : 'Could not write to Supabase'}
               </p>
             </div>
           </div>
@@ -539,7 +553,7 @@ export const BulkStudentUpload: React.FC<BulkStudentUploadProps> = ({ onBack }) 
               <div className="flex items-center justify-between text-xs font-bold text-blue-800 dark:text-blue-300">
                 <span className="flex items-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                  <span>Provisioning Firebase Auth accounts & Firestore documents ({currentImportingIndex} / {validCount})</span>
+                  <span>Saving student records to Supabase (`public.students`) ({currentImportingIndex} processed)</span>
                 </span>
                 <span>{importProgress}%</span>
               </div>
@@ -549,6 +563,27 @@ export const BulkStudentUpload: React.FC<BulkStudentUploadProps> = ({ onBack }) 
                   style={{ width: `${importProgress}%` }}
                 />
               </div>
+            </div>
+          )}
+
+          {/* Overwrite duplicates toggle option */}
+          {duplicateCount > 0 && !isImporting && (
+            <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 flex items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200 font-semibold">
+                <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                <span>
+                  {duplicateCount} student ID{duplicateCount > 1 ? 's' : ''} already exist in the database. By default, duplicate student IDs will be skipped and kept safe.
+                </span>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800 dark:text-slate-200 shrink-0">
+                <input
+                  type="checkbox"
+                  checked={allowOverwrite}
+                  onChange={(e) => setAllowOverwrite(e.target.checked)}
+                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                />
+                <span>Overwrite existing students</span>
+              </label>
             </div>
           )}
 
