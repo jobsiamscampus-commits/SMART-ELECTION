@@ -26,9 +26,11 @@ export const NominateCandidateModal: React.FC<NominateCandidateModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  const { positions, addCandidate } = useElection();
+  const { positions, candidates, addCandidate } = useElection();
 
   // Form State
+  const defaultCandId = `C${String(candidates.length + 1).padStart(3, '0')}`;
+  const [candidateIdInput, setCandidateIdInput] = useState('');
   const [candidateName, setCandidateName] = useState('');
   const [selectedPositionId, setSelectedPositionId] = useState<string>(
     positions[0]?.id || 'pos-1'
@@ -50,6 +52,7 @@ export const NominateCandidateModal: React.FC<NominateCandidateModalProps> = ({
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const isSubmittingRef = useRef(false);
 
   if (!isOpen) return null;
 
@@ -112,10 +115,15 @@ export const NominateCandidateModal: React.FC<NominateCandidateModalProps> = ({
     }
   };
 
-  // Handle Form Submission
+  // Handle Form Submission with Double-Click Protection
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPhotoError('');
+
+    // PREVENT DOUBLE-CLICK / RAPID REPEATED SUBMISSION
+    if (isSubmittingRef.current || isUploading) {
+      return;
+    }
 
     // MANDATORY PHOTO VALIDATION
     if (!photoPreviewUrl) {
@@ -133,59 +141,81 @@ export const NominateCandidateModal: React.FC<NominateCandidateModalProps> = ({
       return;
     }
 
+    // Synchronously lock submission immediately
+    isSubmittingRef.current = true;
     setIsUploading(true);
     setUploadProgress(20);
 
-    const posObj = positions.find((p) => p.id === selectedPositionId);
-    const posTitle = posObj ? posObj.title : 'Council Member';
-    const candidateId = `cand-${Date.now()}`;
+    try {
+      const posObj = positions.find((p) => p.id === selectedPositionId);
+      const posTitle = posObj ? posObj.title : 'Council Member';
 
-    // Simulate Firebase Storage Upload (`candidate_photos/{candidateId}.jpg`)
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    setUploadProgress(60);
+      // Check if candidate already exists in state/Firestore
+      const userEnteredId = candidateIdInput.trim().toUpperCase();
+      const normInputName = candidateName.trim().toLowerCase().replace(/\s+/g, ' ');
 
-    const firebaseStoragePath = `candidate_photos/${candidateId}.jpg`;
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    setUploadProgress(100);
+      const existingCand = candidates.find((c) => {
+        if (userEnteredId && (c.candidateId?.toUpperCase() === userEnteredId || c.id?.toUpperCase() === userEnteredId)) {
+          return true;
+        }
+        const normExistingName = (c.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        return normExistingName === normInputName && c.positionId === selectedPositionId;
+      });
 
-    const achievementsList = achievementsText
-      .split('\n')
-      .map((a) => a.trim())
-      .filter(Boolean);
+      const candidateId = existingCand
+        ? (existingCand.candidateId || existingCand.id)
+        : (userEnteredId || defaultCandId);
 
-    const newCandidateObj: Omit<Candidate, 'id' | 'votesCount'> = {
-      candidateId,
-      name: candidateName.trim(),
-      photo: photoPreviewUrl,
-      photoUrl: photoPreviewUrl,
-      positionId: selectedPositionId,
-      positionName: posTitle,
-      position: posTitle,
-      department: selectedDepartment,
-      manifesto: manifesto.trim(),
-      campaignMessage: campaignMessage.trim() || `Vote for ${candidateName.trim()} for ${posTitle}!`,
-      achievements: achievementsList.length > 0 ? achievementsList : [`Representative candidate for ${selectedDepartment}`],
-      createdAt: new Date().toISOString(),
-    };
+      setUploadProgress(60);
+      const firebaseStoragePath = `candidate_photos/${candidateId}.jpg`;
+      setUploadProgress(100);
 
-    addCandidate(newCandidateObj);
+      const achievementsList = achievementsText
+        .split('\n')
+        .map((a) => a.trim())
+        .filter(Boolean);
 
-    setIsUploading(false);
-    setSuccessToast(
-      `✔ Candidate "${candidateName}" nominated successfully! Photo uploaded to Firebase Storage path: ${firebaseStoragePath}`
-    );
+      const newCandidateObj: Omit<Candidate, 'id' | 'votesCount'> & { candidateId: string } = {
+        candidateId,
+        name: candidateName.trim(),
+        photo: photoPreviewUrl,
+        photoUrl: photoPreviewUrl,
+        positionId: selectedPositionId,
+        positionName: posTitle,
+        position: posTitle,
+        department: selectedDepartment,
+        manifesto: manifesto.trim(),
+        campaignMessage: campaignMessage.trim() || `Vote for ${candidateName.trim()} for ${posTitle}!`,
+        achievements: achievementsList.length > 0 ? achievementsList : [`Representative candidate for ${selectedDepartment}`],
+        createdAt: new Date().toISOString(),
+      };
 
-    setTimeout(() => {
-      setSuccessToast(null);
-      onClose();
-      // Reset form
-      setCandidateName('');
-      setManifesto('');
-      setCampaignMessage('');
-      setAchievementsText('');
-      setPhotoFile(null);
-      setPhotoPreviewUrl('');
-    }, 1200);
+      await addCandidate(newCandidateObj);
+
+      setIsUploading(false);
+      setSuccessToast(
+        `✔ Candidate "${candidateName.trim()}" (${candidateId}) saved successfully in Cloud Firestore!`
+      );
+
+      setTimeout(() => {
+        setSuccessToast(null);
+        isSubmittingRef.current = false;
+        onClose();
+        // Reset form
+        setCandidateIdInput('');
+        setCandidateName('');
+        setManifesto('');
+        setCampaignMessage('');
+        setAchievementsText('');
+        setPhotoFile(null);
+        setPhotoPreviewUrl('');
+      }, 1000);
+    } catch (err) {
+      console.error('Error submitting candidate:', err);
+      setIsUploading(false);
+      isSubmittingRef.current = false;
+      alert('Failed to save candidate to Firestore. Please try again.');
+    }
   };
 
   return (
@@ -335,8 +365,21 @@ export const NominateCandidateModal: React.FC<NominateCandidateModalProps> = ({
             )}
           </div>
 
-          {/* CANDIDATE NAME & POSITION GRID */}
+          {/* CANDIDATE ID & NAME GRID */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block font-bold text-slate-900 dark:text-white mb-1">
+                Candidate ID <span className="text-slate-400 font-normal">(e.g. {defaultCandId})</span>
+              </label>
+              <input
+                type="text"
+                placeholder={defaultCandId}
+                value={candidateIdInput}
+                onChange={(e) => setCandidateIdInput(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono font-bold"
+              />
+            </div>
+
             <div>
               <label className="block font-bold text-slate-900 dark:text-white mb-1">
                 Candidate Name <span className="text-rose-500">*</span>
@@ -345,7 +388,7 @@ export const NominateCandidateModal: React.FC<NominateCandidateModalProps> = ({
                 <User className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="e.g. Ananya Verma"
+                  placeholder="e.g. MUHAMMED NIHAJ U"
                   value={candidateName}
                   onChange={(e) => setCandidateName(e.target.value)}
                   required
@@ -353,23 +396,24 @@ export const NominateCandidateModal: React.FC<NominateCandidateModalProps> = ({
                 />
               </div>
             </div>
+          </div>
 
-            <div>
-              <label className="block font-bold text-slate-900 dark:text-white mb-1">
-                Position <span className="text-rose-500">*</span>
-              </label>
-              <select
-                value={selectedPositionId}
-                onChange={(e) => setSelectedPositionId(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-bold"
-              >
-                {positions.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title}
-                  </option>
-                ))}
-              </select>
-            </div>
+          {/* POSITION SELECTION */}
+          <div>
+            <label className="block font-bold text-slate-900 dark:text-white mb-1">
+              Position <span className="text-rose-500">*</span>
+            </label>
+            <select
+              value={selectedPositionId}
+              onChange={(e) => setSelectedPositionId(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-bold"
+            >
+              {positions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.title}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* DEPARTMENT SELECTION */}

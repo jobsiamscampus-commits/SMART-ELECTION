@@ -52,6 +52,7 @@ export const BulkCandidateUploadModal: React.FC<BulkCandidateUploadModalProps> =
   const [summaryMessage, setSummaryMessage] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const isImportingRef = useRef(false);
 
   if (!isOpen) return null;
 
@@ -153,9 +154,17 @@ export const BulkCandidateUploadModal: React.FC<BulkCandidateUploadModalProps> =
             getVal(['achievements', 'milestones']) ||
             String(row['Achievements'] || '').trim();
 
+          // Check existing candidate by rawId or by normalized name
+          const normRawName = rawName.trim().toLowerCase().replace(/\s+/g, ' ');
+          const existingCandidateByName = candidates.find(
+            (c) => (c.name || '').trim().toLowerCase().replace(/\s+/g, ' ') === normRawName
+          );
+
           // Generate stable candidate ID if missing
           const candidateId = rawId
             ? rawId.toUpperCase().trim()
+            : existingCandidateByName
+            ? (existingCandidateByName.candidateId || existingCandidateByName.id)
             : `CAND-${rawName.toLowerCase().replace(/[^a-z0-9]/g, '') || idx + 1}`;
 
           // Match Position
@@ -236,43 +245,54 @@ export const BulkCandidateUploadModal: React.FC<BulkCandidateUploadModalProps> =
   };
 
   const handleStartImport = async () => {
+    if (isImportingRef.current || isImporting) return;
+
     const validRows = parsedRows.filter((r) => r.status !== 'invalid');
     if (validRows.length === 0) {
       alert('No valid candidate records found to import.');
       return;
     }
 
+    isImportingRef.current = true;
     setIsImporting(true);
     setImportProgress(20);
 
-    const candidatesToSave = validRows.map((r) => ({
-      id: r.candidateId,
-      candidateId: r.candidateId,
-      name: r.name,
-      photo: r.photoUrl,
-      photoUrl: r.photoUrl,
-      positionId: r.positionId,
-      positionName: r.positionName,
-      position: r.positionName,
-      department: r.department,
-      manifesto: r.manifesto,
-      campaignMessage: r.campaignMessage,
-      achievements: r.achievements,
-      isActive: true,
-    }));
+    try {
+      const candidatesToSave = validRows.map((r) => ({
+        id: r.candidateId,
+        candidateId: r.candidateId,
+        name: r.name,
+        photo: r.photoUrl,
+        photoUrl: r.photoUrl,
+        positionId: r.positionId,
+        positionName: r.positionName,
+        position: r.positionName,
+        department: r.department,
+        manifesto: r.manifesto,
+        campaignMessage: r.campaignMessage,
+        achievements: r.achievements,
+        isActive: true,
+      }));
 
-    setImportProgress(60);
-    const res = await saveCandidatesToFirestoreBatch(candidatesToSave);
-    setImportProgress(100);
+      setImportProgress(60);
+      const res = await saveCandidatesToFirestoreBatch(candidatesToSave);
+      setImportProgress(100);
 
-    setIsImporting(false);
-    setSummaryMessage(
-      `✔ Successfully processed ${res.saved} candidate records in Cloud Firestore. Existing candidates remained safe and intact!`
-    );
+      setIsImporting(false);
+      setSummaryMessage(
+        `✔ Successfully processed ${res.saved} candidate records in Cloud Firestore. Existing candidates remained safe and intact!`
+      );
 
-    setTimeout(() => {
-      onClose();
-    }, 2000);
+      setTimeout(() => {
+        isImportingRef.current = false;
+        onClose();
+      }, 1800);
+    } catch (err) {
+      console.error('Error during bulk import:', err);
+      setIsImporting(false);
+      isImportingRef.current = false;
+      alert('Failed to import candidates. Please try again.');
+    }
   };
 
   const resetState = () => {

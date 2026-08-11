@@ -199,7 +199,7 @@ export const AdminDashboard: React.FC = () => {
             Admin Control Center
           </h1>
           <p className="text-xs sm:text-sm text-slate-300 mt-1">
-            Manage 70 student records, candidate nominations, positions, and live Firestore voting states.
+            Manage {students.length} student records, candidate nominations, positions, and live Firestore voting states.
           </p>
         </div>
 
@@ -478,8 +478,15 @@ export const AdminDashboard: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-300">
-                {filteredStudents.map((st) => (
-                  <tr key={st.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
+                {filteredStudents.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-8 text-center text-slate-500 dark:text-slate-400 font-bold">
+                      No students found.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredStudents.map((st) => (
+                    <tr key={st.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
                     <td className="p-3 flex items-center gap-3">
                       <img
                         src={st.photo}
@@ -529,7 +536,7 @@ export const AdminDashboard: React.FC = () => {
                       </button>
                     </td>
                   </tr>
-                ))}
+                )))}
               </tbody>
             </table>
           </div>
@@ -578,8 +585,18 @@ export const AdminDashboard: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredCandidates.map((cand) => (
+          {filteredCandidates.length === 0 ? (
+            <div className="p-12 text-center bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                No candidates found.
+              </p>
+              <p className="text-xs text-slate-500">
+                Use "Import Candidates (Excel/CSV)" or "Nominate Candidate" to add candidates.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredCandidates.map((cand) => (
               <div
                 key={cand.id}
                 className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 space-y-3 flex flex-col justify-between"
@@ -657,7 +674,7 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
             ))}
-          </div>
+          </div>)}
         </div>
       )}
 

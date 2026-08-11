@@ -37,6 +37,7 @@ import {
   listenToSettingsFromFirestore,
   saveSettingsToFirestore,
   listenToVotesFromFirestore,
+  cleanupMockDataFromFirestore,
 } from '../firebase/config';
 
 interface ElectionContextType {
@@ -142,19 +143,10 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
   });
 
-  // Students Dataset (Loaded permanently from Cloud Firestore)
+  // Students Dataset (Loaded from Cloud Firestore with localStorage fallback)
   const [students, setStudents] = useState<Student[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.STUDENTS);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        // Clean out any legacy mock students
-        return parsed.filter((s: any) => s.name !== 'Aarav Sharma' && s.id !== 'IAMS-2026-001');
-      } catch {
-        return [];
-      }
-    }
-    return [];
+    return saved ? JSON.parse(saved) : [];
   });
 
   // Positions Dataset (Automatically filters out Vice Chairman and Secretary)
@@ -170,28 +162,16 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         );
         if (cleaned.length > 0) return cleaned;
       } catch (e) {
-        // Fallback to defaults if JSON parse fails
+        // Fallback if JSON parse fails
       }
     }
     return DEFAULT_POSITIONS;
   });
 
-  // Candidates Dataset (Automatically filters out candidates assigned to Vice Chairman or Secretary)
+  // Candidates Dataset (Loaded from Cloud Firestore with localStorage fallback)
   const [candidates, setCandidates] = useState<Candidate[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.CANDIDATES);
-    if (saved) {
-      try {
-        const parsed: Candidate[] = JSON.parse(saved);
-        const cleaned = parsed.filter((c) => {
-          const posName = (c.positionName || c.position || '').toLowerCase();
-          return posName !== 'vice chairman' && posName !== 'secretary';
-        });
-        if (cleaned.length > 0) return cleaned;
-      } catch (e) {
-        // Fallback to defaults if JSON parse fails
-      }
-    }
-    return DEFAULT_CANDIDATES;
+    return saved ? JSON.parse(saved) : [];
   });
 
   // Votes Records Dataset
@@ -203,7 +183,7 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Announcements
   const [announcements, setAnnouncements] = useState<Announcement[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.ANNOUNCEMENTS);
-    return saved ? JSON.parse(saved) : DEFAULT_ANNOUNCEMENTS;
+    return saved ? JSON.parse(saved) : [];
   });
 
   // Auth User Session State
@@ -217,7 +197,10 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.name === 'Aarav Sharma') return null;
+        const name = (parsed?.name || '').toLowerCase();
+        if (name.includes('aarav') || name.includes('sharma') || name.includes('demo') || name.includes('sample')) {
+          return null;
+        }
         return parsed;
       } catch {
         return null;
@@ -256,8 +239,48 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [currentUser]);
 
+  // LocalStorage persistence sync effects for offline / quota fallback
+  useEffect(() => {
+    if (students && students.length > 0) {
+      localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(students));
+    }
+  }, [students]);
+
+  useEffect(() => {
+    if (candidates && candidates.length > 0) {
+      localStorage.setItem(STORAGE_KEYS.CANDIDATES, JSON.stringify(candidates));
+    }
+  }, [candidates]);
+
+  useEffect(() => {
+    if (positions && positions.length > 0) {
+      localStorage.setItem(STORAGE_KEYS.POSITIONS, JSON.stringify(positions));
+    }
+  }, [positions]);
+
+  useEffect(() => {
+    if (announcements) {
+      localStorage.setItem(STORAGE_KEYS.ANNOUNCEMENTS, JSON.stringify(announcements));
+    }
+  }, [announcements]);
+
+  useEffect(() => {
+    if (votes) {
+      localStorage.setItem(STORAGE_KEYS.VOTES, JSON.stringify(votes));
+    }
+  }, [votes]);
+
+  useEffect(() => {
+    if (settings) {
+      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+    }
+  }, [settings]);
+
   // Real-time Cloud Firestore Listeners for single source of truth across all devices
   useEffect(() => {
+    // Perform automated production cleanup for mock/demo students and candidates from Firestore
+    cleanupMockDataFromFirestore();
+
     const unsubStudents = listenToStudentsFromFirestore((firestoreStudents) => {
       if (firestoreStudents && firestoreStudents.length >= 0) {
         setStudents(firestoreStudents);
@@ -266,12 +289,7 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const unsubCandidates = listenToCandidatesFromFirestore((firestoreCandidates) => {
       if (firestoreCandidates) {
-        if (firestoreCandidates.length === 0) {
-          // If clean Firestore DB, seed default candidates permanently to Firestore
-          saveCandidatesToFirestoreBatch(DEFAULT_CANDIDATES);
-        } else {
-          setCandidates(firestoreCandidates);
-        }
+        setCandidates(firestoreCandidates);
       }
     });
 
@@ -630,24 +648,53 @@ export const ElectionProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   // Candidate Management Operations
-  const addCandidate = (candData: Omit<Candidate, 'id' | 'votesCount'>) => {
+  const addCandidate = async (candData: Omit<Candidate, 'id' | 'votesCount'> & { candidateId?: string }) => {
     playSound('success', soundEnabled);
-    const candId = (candData.candidateId || `cand-${Date.now()}`).trim();
+    const cleanName = (candData.name || '').trim();
+    const nameNorm = cleanName.toLowerCase().replace(/\s+/g, ' ');
+
+    // Look for existing candidate in local state by candidateId OR by name + position
+    const existing = candidates.find((c) => {
+      if (candData.candidateId && (c.candidateId?.toUpperCase() === candData.candidateId.toUpperCase() || c.id?.toUpperCase() === candData.candidateId.toUpperCase())) {
+        return true;
+      }
+      const existingNameNorm = (c.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      return existingNameNorm === nameNorm && c.positionId === candData.positionId;
+    });
+
+    const candId = (
+      existing?.candidateId ||
+      existing?.id ||
+      candData.candidateId ||
+      `C${String(candidates.length + 1).padStart(3, '0')}`
+    ).trim();
+
     const newCand: Candidate = {
       ...candData,
       id: candId,
       candidateId: candId,
-      votesCount: 0,
+      name: cleanName,
+      votesCount: existing ? existing.votesCount : 0,
       isActive: true,
     };
+
     setCandidates((prev) => {
-      const exists = prev.some((c) => c.id === candId || (c.candidateId && c.candidateId === candId));
-      if (exists) {
-        return prev.map((c) => (c.id === candId || c.candidateId === candId ? { ...c, ...newCand } : c));
+      const idx = prev.findIndex(
+        (c) =>
+          c.id === candId ||
+          c.candidateId === candId ||
+          ((c.name || '').trim().toLowerCase().replace(/\s+/g, ' ') === nameNorm && c.positionId === candData.positionId)
+      );
+
+      if (idx !== -1) {
+        const next = [...prev];
+        next[idx] = { ...prev[idx], ...newCand };
+        return next;
       }
       return [...prev, newCand];
     });
-    saveCandidateToFirestore(newCand);
+
+    await saveCandidateToFirestore(newCand);
   };
 
   const updateCandidate = (candidateId: string, updated: Partial<Candidate>) => {

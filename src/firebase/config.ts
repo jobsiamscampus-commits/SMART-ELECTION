@@ -123,6 +123,8 @@ export const listenToStudentsFromFirestore = (
   callback: (students: Student[]) => void,
   onError?: (error: any) => void
 ) => {
+  if (!isFirebaseConfigured() || !db) return () => {};
+
   return onSnapshot(
     collection(db, 'students'),
     (snapshot) => {
@@ -147,7 +149,7 @@ export const listenToStudentsFromFirestore = (
       callback(students);
     },
     (error) => {
-      console.error('Firestore students listener error:', error);
+      console.warn('Firestore students listener status:', error?.message || error);
       if (onError) onError(error);
     }
   );
@@ -494,24 +496,76 @@ export const generateAllStudentSlipsBatch = async (
 export const listenToCandidatesFromFirestore = (
   callback: (candidates: any[]) => void
 ) => {
-  return onSnapshot(collection(db, 'candidates'), (snap) => {
-    const list: any[] = [];
-    snap.forEach((d) => {
-      list.push({ id: d.id, ...d.data() });
-    });
-    callback(list);
-  });
+  if (!isFirebaseConfigured() || !db) return () => {};
+
+  return onSnapshot(
+    collection(db, 'candidates'),
+    (snap) => {
+      const map = new Map<string, any>();
+
+      snap.forEach((d) => {
+        const data = d.data();
+        const docId = d.id;
+        const candidateIdVal = (data.candidateId || docId).trim();
+        const candItem = { id: docId, candidateId: candidateIdVal, ...data };
+
+        const candIdKey = candidateIdVal.toUpperCase();
+        const normNameKey = `${(data.name || '').trim().toLowerCase().replace(/\s+/g, ' ')};${data.positionId || ''}`;
+
+        let existingKeyToReplace: string | null = null;
+        let isDuplicate = false;
+
+        for (const [key, existing] of map.entries()) {
+          const existingCandIdKey = (existing.candidateId || existing.id).toUpperCase().trim();
+          const existingNameKey = `${(existing.name || '').trim().toLowerCase().replace(/\s+/g, ' ')};${existing.positionId || ''}`;
+
+          if (candIdKey === existingCandIdKey || (normNameKey === existingNameKey && data.name)) {
+            isDuplicate = true;
+            // Prefer standard document ID format (e.g., C001) or higher votesCount
+            const isNewDocCleanId = docId.match(/^C\d{3,}$/i) || candidateIdVal.match(/^C\d{3,}$/i);
+            const isExistingCleanId = existing.id.match(/^C\d{3,}$/i) || existing.candidateId.match(/^C\d{3,}$/i);
+
+            if (isNewDocCleanId && !isExistingCleanId) {
+              existingKeyToReplace = key;
+            } else if (!isNewDocCleanId && isExistingCleanId) {
+              // Keep existing
+            } else if ((data.votesCount || 0) > (existing.votesCount || 0)) {
+              existingKeyToReplace = key;
+            }
+            break;
+          }
+        }
+
+        if (existingKeyToReplace) {
+          map.delete(existingKeyToReplace);
+          map.set(docId, candItem);
+        } else if (!isDuplicate) {
+          map.set(docId, candItem);
+        }
+      });
+
+      callback(Array.from(map.values()));
+    },
+    (error) => {
+      console.warn('Firestore candidates listener status:', error?.message || error);
+    }
+  );
 };
 
 export const saveCandidateToFirestore = async (candidate: any): Promise<boolean> => {
+  if (!isFirebaseConfigured() || !db) return false;
+
   try {
-    const docId = (candidate.candidateId || candidate.id || `cand-${Date.now()}`).trim();
+    const rawId = (candidate.candidateId || candidate.id || '').trim();
+    const cleanName = (candidate.name || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    const docId = rawId || `CAND-${cleanName || Date.now()}`;
+
     const docRef = doc(db, 'candidates', docId);
 
     const docData: Record<string, any> = {
       id: docId,
       candidateId: docId,
-      name: candidate.name,
+      name: (candidate.name || '').trim(),
       photo: candidate.photo || candidate.photoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
       photoUrl: candidate.photoUrl || candidate.photo || '',
       positionId: candidate.positionId || 'pos-1',
@@ -548,18 +602,16 @@ export const saveCandidatesToFirestoreBatch = async (
     let savedCount = 0;
 
     candidatesList.forEach((cand) => {
-      const docId = (
-        cand.candidateId ||
-        cand.id ||
-        `cand-${cand.name ? cand.name.toLowerCase().replace(/[^a-z0-9]/g, '') : Date.now()}`
-      ).trim();
+      const rawId = (cand.candidateId || cand.id || '').trim();
+      const cleanName = (cand.name || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+      const docId = rawId || `CAND-${cleanName || Date.now()}`;
 
       const docRef = doc(db, 'candidates', docId);
 
       const docData: Record<string, any> = {
         id: docId,
         candidateId: docId,
-        name: cand.name,
+        name: (cand.name || '').trim(),
         photo: cand.photo || cand.photoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
         photoUrl: cand.photoUrl || cand.photo || '',
         positionId: cand.positionId || 'pos-1',
@@ -606,13 +658,21 @@ export const deleteCandidateFromFirestore = async (candidateId: string): Promise
 export const listenToPositionsFromFirestore = (
   callback: (positions: any[]) => void
 ) => {
-  return onSnapshot(collection(db, 'positions'), (snap) => {
-    const list: any[] = [];
-    snap.forEach((d) => {
-      list.push({ id: d.id, ...d.data() });
-    });
-    callback(list);
-  });
+  if (!isFirebaseConfigured() || !db) return () => {};
+
+  return onSnapshot(
+    collection(db, 'positions'),
+    (snap) => {
+      const list: any[] = [];
+      snap.forEach((d) => {
+        list.push({ id: d.id, ...d.data() });
+      });
+      callback(list);
+    },
+    (error) => {
+      console.warn('Firestore positions listener status:', error?.message || error);
+    }
+  );
 };
 
 export const savePositionToFirestore = async (position: any): Promise<boolean> => {
@@ -641,13 +701,21 @@ export const deletePositionFromFirestore = async (positionId: string): Promise<b
 export const listenToAnnouncementsFromFirestore = (
   callback: (announcements: any[]) => void
 ) => {
-  return onSnapshot(collection(db, 'announcements'), (snap) => {
-    const list: any[] = [];
-    snap.forEach((d) => {
-      list.push({ id: d.id, ...d.data() });
-    });
-    callback(list);
-  });
+  if (!isFirebaseConfigured() || !db) return () => {};
+
+  return onSnapshot(
+    collection(db, 'announcements'),
+    (snap) => {
+      const list: any[] = [];
+      snap.forEach((d) => {
+        list.push({ id: d.id, ...d.data() });
+      });
+      callback(list);
+    },
+    (error) => {
+      console.warn('Firestore announcements listener status:', error?.message || error);
+    }
+  );
 };
 
 export const saveAnnouncementToFirestore = async (announcement: any): Promise<boolean> => {
@@ -676,11 +744,19 @@ export const deleteAnnouncementFromFirestore = async (announcementId: string): P
 export const listenToSettingsFromFirestore = (
   callback: (settings: any) => void
 ) => {
-  return onSnapshot(doc(db, 'settings', 'current'), (snap) => {
-    if (snap.exists()) {
-      callback(snap.data());
+  if (!isFirebaseConfigured() || !db) return () => {};
+
+  return onSnapshot(
+    doc(db, 'settings', 'current'),
+    (snap) => {
+      if (snap.exists()) {
+        callback(snap.data());
+      }
+    },
+    (error) => {
+      console.warn('Firestore settings listener status:', error?.message || error);
     }
-  });
+  );
 };
 
 export const saveSettingsToFirestore = async (settings: any): Promise<boolean> => {
@@ -699,11 +775,150 @@ export const saveSettingsToFirestore = async (settings: any): Promise<boolean> =
 export const listenToVotesFromFirestore = (
   callback: (votes: any[]) => void
 ) => {
-  return onSnapshot(collection(db, 'votes'), (snap) => {
-    const list: any[] = [];
-    snap.forEach((d) => {
-      list.push({ id: d.id, ...d.data() });
-    });
-    callback(list);
-  });
+  if (!isFirebaseConfigured() || !db) return () => {};
+
+  return onSnapshot(
+    collection(db, 'votes'),
+    (snap) => {
+      const list: any[] = [];
+      snap.forEach((d) => {
+        list.push({ id: d.id, ...d.data() });
+      });
+      callback(list);
+    },
+    (error) => {
+      console.warn('Firestore votes listener status:', error?.message || error);
+    }
+  );
 };
+
+/**
+ * Remove any mock/demo students and candidates from Firestore
+ */
+export const cleanupMockDataFromFirestore = async (): Promise<void> => {
+  if (!isFirebaseConfigured() || !db) return;
+  if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('mock_data_cleaned') === 'true') {
+    return;
+  }
+
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem('mock_data_cleaned', 'true');
+    }
+
+    // 1. Clean Mock Candidates AND Duplicate Candidates from Firestore
+    const candidatesSnap = await getDocs(collection(db, 'candidates'));
+    const mockCandIds = new Set(['cand-1', 'cand-2', 'cand-3', 'cand-4', 'cand-5', 'cand-6', 'cand-7', 'cand-8', 'cand-9', 'cand-10']);
+    const mockCandNames = new Set([
+      'rohan menon', 'ananya verma', 'vikram rao', 'diya malhotra',
+      'karan saxena', 'kavya nair', 'arjun iyer', 'isha menon',
+      'rohan patel', 'amina gupta', 'demo candidate', 'sample candidate', 'test candidate', 'fake candidate'
+    ]);
+
+    const candidatesByGroup = new Map<string, Array<{ docId: string; data: any }>>();
+
+    for (const d of candidatesSnap.docs) {
+      const data = d.data();
+      const docId = d.id;
+      const docIdLower = docId.toLowerCase();
+      const nameClean = (data.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+      const isMock =
+        mockCandIds.has(docIdLower) ||
+        mockCandNames.has(nameClean) ||
+        nameClean.includes('demo candidate') ||
+        nameClean.includes('sample candidate') ||
+        nameClean.includes('test candidate') ||
+        nameClean.includes('fake candidate');
+
+      if (isMock) {
+        try {
+          await deleteDoc(doc(db, 'candidates', docId));
+          console.log(`[Cleanup] Removed mock candidate: ${docId} (${data.name})`);
+        } catch (e) {
+          console.error(`Failed to delete mock candidate ${docId}:`, e);
+        }
+        continue;
+      }
+
+      // Group candidate documents by candidate ID or by normalized name + positionId
+      const candidateIdVal = (data.candidateId || '').trim();
+      const groupKey = (candidateIdVal && !candidateIdVal.startsWith('cand-17'))
+        ? candidateIdVal.toUpperCase()
+        : `${nameClean}_${data.positionId || ''}`;
+
+      if (!candidatesByGroup.has(groupKey)) {
+        candidatesByGroup.set(groupKey, []);
+      }
+      candidatesByGroup.get(groupKey)!.push({ docId, data });
+    }
+
+    // Delete duplicate candidate records, keeping the primary valid record
+    for (const [groupKey, group] of candidatesByGroup.entries()) {
+      if (group.length > 1) {
+        // Sort group to pick the best primary document to keep
+        group.sort((a, b) => {
+          const aIsCleanId = a.docId.match(/^C\d{3,}$/i) || (a.data.candidateId && a.data.candidateId.match(/^C\d{3,}$/i));
+          const bIsCleanId = b.docId.match(/^C\d{3,}$/i) || (b.data.candidateId && b.data.candidateId.match(/^C\d{3,}$/i));
+          if (aIsCleanId && !bIsCleanId) return -1;
+          if (!aIsCleanId && bIsCleanId) return 1;
+
+          const aVotes = a.data.votesCount || 0;
+          const bVotes = b.data.votesCount || 0;
+          return bVotes - aVotes;
+        });
+
+        const primaryDoc = group[0];
+        const duplicates = group.slice(1);
+
+        for (const dup of duplicates) {
+          try {
+            await deleteDoc(doc(db, 'candidates', dup.docId));
+            console.log(`[Cleanup] Removed duplicate candidate document: ${dup.docId} (Kept primary: ${primaryDoc.docId} for ${primaryDoc.data.name})`);
+          } catch (e) {
+            console.error(`Failed to delete duplicate candidate ${dup.docId}:`, e);
+          }
+        }
+      }
+    }
+
+    // 2. Clean Mock Students from Firestore
+    const studentsSnap = await getDocs(collection(db, 'students'));
+    const mockStudentNames = new Set([
+      'aarav sharma', 'demo student', 'test student', 'sample student',
+      'john doe', 'jane doe', 'example student', 'dummy student'
+    ]);
+    const mockStudentIds = new Set(['iams-2026-001', 'demo-1', 'test-1']);
+
+    studentsSnap.forEach(async (d) => {
+      const data = d.data();
+      const docId = d.id.toLowerCase();
+      const studentIdVal = (data.studentId || '').toLowerCase().trim();
+      const name = (data.name || '').toLowerCase().trim();
+
+      const isMock =
+        mockStudentIds.has(docId) ||
+        mockStudentIds.has(studentIdVal) ||
+        mockStudentNames.has(name) ||
+        name.includes('demo student') ||
+        name.includes('sample student') ||
+        name.includes('test student') ||
+        name.includes('dummy student') ||
+        name.includes('aarav sharma') ||
+        name.includes('john doe') ||
+        name.includes('jane doe');
+
+      if (isMock) {
+        try {
+          await deleteDoc(doc(db, 'students', d.id));
+          console.log(`[Cleanup] Removed mock student: ${d.id} (${data.name})`);
+        } catch (e) {
+          console.error(`Failed to delete mock student ${d.id}:`, e);
+        }
+      }
+    });
+  } catch (err: any) {
+    console.warn('Firestore cleanup skipped (quota limit or network):', err?.message || err);
+  }
+};
+
